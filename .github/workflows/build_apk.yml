@@ -33,22 +33,44 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Build Restaurant POS APK
+      - name: Build Restaurant POS APK (Outlet App)
         run: |
-          POS_DIR=$(find . -type d -name "restaurant_pos" | head -n 1)
-          echo "Found POS DIR: $POS_DIR"
+          POS_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "restaurant_pos" | head -n 1 | xargs dirname)
+          echo "Building POS in: $POS_DIR"
           cd "$POS_DIR"
+          # Fix wrong multicast_dns version constraint directly
+          python3 -c "
+          with open('pubspec.yaml', 'r') as f:
+              c = f.read()
+          c = c.replace('^0.3.3+2', '^0.3.3+1')
+          with open('pubspec.yaml', 'w') as f:
+              f.write(c)
+          "
           flutter create . --platforms=android --org=com.restaurant.pos
-          # Fix multicast_dns version mismatch
-          sed -i 's/multicast_dns:.*/multicast_dns: ^0.3.3+1/g' pubspec.yaml
           flutter pub get
           flutter build apk --debug --no-tree-shake-icons
           mkdir -p $GITHUB_WORKSPACE/output_pos
-          cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_pos/Restaurant-POS.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_pos/Restaurant-POS-Outlet.apk
 
-      - name: Upload Restaurant POS APK
+      - name: Build SaaS Portal APK (Admin App)
+        run: |
+          PORTAL_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "saas_portal" | head -n 1 | xargs dirname)
+          echo "Building SaaS Portal in: $PORTAL_DIR"
+          cd "$PORTAL_DIR"
+          flutter create . --platforms=android --org=com.saas.portal
+          flutter pub get
+          flutter build apk --debug --no-tree-shake-icons
+          mkdir -p $GITHUB_WORKSPACE/output_portal
+          cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_portal/SaaS-Admin-Portal.apk
+
+      - name: Upload Restaurant POS APK (Outlet)
         uses: actions/upload-artifact@v4
         with:
-          name: Restaurant-POS-App
-          path: output_pos/Restaurant-POS.apk
-          
+          name: 1-Restaurant-POS-Outlet-APK
+          path: output_pos/Restaurant-POS-Outlet.apk
+
+      - name: Upload SaaS Portal APK (Admin)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2-SaaS-Admin-Portal-APK
+          path: output_portal/SaaS-Admin-Portal.apk
