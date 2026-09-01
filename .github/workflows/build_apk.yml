@@ -21,9 +21,20 @@ jobs:
             unzip -o "$ZIP_FILE"
           fi
 
-      - name: Inject Full Modern UI into Apps
+      - name: Set up Java / JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Inject Full Interactive UI - Restaurant POS
         run: |
-          # 1. Update Restaurant POS UI
           POS_MAIN=$(find . -path "*/restaurant_pos/lib/main.dart" | head -n 1)
           cat << 'EOF' > "$POS_MAIN"
           import 'package:flutter/material.dart';
@@ -35,7 +46,7 @@ jobs:
             @override
             Widget build(BuildContext context) {
               return MaterialApp(
-                title: 'Restaurant POS & BOH',
+                title: 'Restaurant Outlet POS',
                 debugShowCheckedModeBanner: false,
                 theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange), useMaterial3: true),
                 home: const MainPosScreen(),
@@ -71,12 +82,35 @@ jobs:
             }
           }
 
-          class BillingScreen extends StatelessWidget {
+          class BillingScreen extends StatefulWidget {
             const BillingScreen({super.key});
+            @override
+            State<BillingScreen> createState() => _BillingScreenState();
+          }
+
+          class _BillingScreenState extends State<BillingScreen> {
+            final List<Map<String, dynamic>> _billItems = [];
+
+            void _addItem(String name, int price) {
+              setState(() {
+                _billItems.add({'name': name, 'price': price});
+              });
+            }
+
+            int get _total => _billItems.fold(0, (sum, item) => sum + (item['price'] as int));
+
             @override
             Widget build(BuildContext context) {
               return Scaffold(
-                appBar: AppBar(title: const Text('Counter POS Billing'), actions: [IconButton(icon: const Icon(Icons.print), onPressed: () {})]),
+                appBar: AppBar(
+                  title: const Text('Counter POS Billing'),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_sweep),
+                      onPressed: () => setState(() => _billItems.clear()),
+                    )
+                  ],
+                ),
                 body: Row(
                   children: [
                     Expanded(
@@ -86,29 +120,39 @@ jobs:
                         padding: const EdgeInsets.all(8),
                         childAspectRatio: 1.2,
                         children: [
-                          _card('Paneer Tikka', '₹220', Colors.orange.shade50),
-                          _card('Dal Makhani', '₹180', Colors.amber.shade50),
-                          _card('Butter Roti', '₹25', Colors.blue.shade50),
-                          _card('Veg Biryani', '₹240', Colors.green.shade50),
+                          _menuCard('Paneer Tikka', 220, Colors.orange.shade50),
+                          _menuCard('Dal Makhani', 180, Colors.amber.shade50),
+                          _menuCard('Butter Roti', 25, Colors.blue.shade50),
+                          _menuCard('Veg Biryani', 240, Colors.green.shade50),
                         ],
                       ),
                     ),
                     Container(
-                      width: 150,
+                      width: 160,
                       color: Colors.grey.shade100,
                       padding: const EdgeInsets.all(8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Active Bill', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('Active Bill', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           const Divider(),
-                          const Text('Paneer Tikka x1'),
-                          const Text('Butter Roti x4'),
-                          const Spacer(),
-                          const Text('Total: ₹320', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: _billItems.length,
+                              itemBuilder: (ctx, i) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Text('${_billItems[i]['name']} - ₹${_billItems[i]['price']}'),
+                              ),
+                            ),
+                          ),
+                          const Divider(),
+                          Text('Total: ₹$_total', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
                           const SizedBox(height: 8),
                           ElevatedButton(
-                            onPressed: () {},
+                            onPressed: _billItems.isEmpty ? null : () {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Paid ₹$_total via UPI BharatQR!')));
+                              setState(() => _billItems.clear());
+                            },
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
                             child: const Text('Pay UPI'),
                           )
@@ -119,7 +163,26 @@ jobs:
                 ),
               );
             }
-            Widget _card(String t, String p, Color c) => Card(color: c, child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.bold)), Text(p)])));
+
+            Widget _menuCard(String title, int price, Color bg) {
+              return InkWell(
+                onTap: () => _addItem(title, price),
+                child: Card(
+                  color: bg,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('₹$price'),
+                        const SizedBox(height: 4),
+                        const Icon(Icons.add_circle, size: 20, color: Colors.deepOrange)
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
           }
 
           class TableFloorScreen extends StatelessWidget {
@@ -132,15 +195,26 @@ jobs:
                   crossAxisCount: 3,
                   padding: const EdgeInsets.all(12),
                   children: [
-                    _tBox('T-1', 'Occupied', Colors.red.shade100, Colors.red),
-                    _tBox('T-2', 'Vacant', Colors.green.shade100, Colors.green),
-                    _tBox('T-3', 'Billed', Colors.orange.shade100, Colors.orange),
-                    _tBox('T-4', 'Vacant', Colors.green.shade100, Colors.green),
+                    _tableBox('T-1', 'Occupied', Colors.red.shade100, Colors.red),
+                    _tableBox('T-2', 'Vacant', Colors.green.shade100, Colors.green),
+                    _tableBox('T-3', 'Billed', Colors.orange.shade100, Colors.orange),
+                    _tableBox('T-4', 'Vacant', Colors.green.shade100, Colors.green),
                   ],
                 ),
               );
             }
-            Widget _tBox(String n, String s, Color b, Color tc) => Card(color: b, child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text(n, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), Text(s, style: TextStyle(color: tc, fontWeight: FontWeight.bold))])));
+            Widget _tableBox(String name, String status, Color bg, Color textCol) => Card(
+              color: bg,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text(status, style: TextStyle(color: textCol, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            );
           }
 
           class KdsScreen extends StatelessWidget {
@@ -157,7 +231,12 @@ jobs:
                       child: ListTile(
                         title: const Text('Order #104 - Table 1 (8m ago)'),
                         subtitle: const Text('2x Paneer Tikka\n1x Jeera Rice'),
-                        trailing: ElevatedButton(onPressed: () {}, child: const Text('Food Ready')),
+                        trailing: ElevatedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Food Ready alert sent to Captain!')));
+                          },
+                          child: const Text('Food Ready'),
+                        ),
                       ),
                     )
                   ],
@@ -177,9 +256,21 @@ jobs:
                   children: [
                     const ListTile(leading: Icon(Icons.warning, color: Colors.red), title: Text('Low Stock Alert: Paneer'), subtitle: Text('Current: 1.2 kg | Par Level: 5.0 kg')),
                     const Divider(),
-                    ElevatedButton.icon(onPressed: () {}, icon: const Icon(Icons.add_shopping_cart), label: const Text('Chef Demand / Kitchen Indent')),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Indent created and sent to Storekeeper!')));
+                      },
+                      icon: const Icon(Icons.add_shopping_cart),
+                      label: const Text('Chef Demand / Kitchen Indent'),
+                    ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.receipt_long), label: const Text('Generate PO / Vendor Order')),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Purchase Order (PO) generated!')));
+                      },
+                      icon: const Icon(Icons.receipt_long),
+                      label: const Text('Generate PO / Vendor Order'),
+                    ),
                   ],
                 ),
               );
@@ -187,10 +278,12 @@ jobs:
           }
           EOF
 
-          # 2. Update SaaS Portal UI
+      - name: Inject Full Interactive UI - SaaS Portal
+        run: |
           PORTAL_MAIN=$(find . -path "*/saas_portal/lib/main.dart" | head -n 1)
           cat << 'EOF' > "$PORTAL_MAIN"
           import 'package:flutter/material.dart';
+          import 'dart:math';
 
           void main() => runApp(const SaasPortalApp());
 
@@ -207,47 +300,213 @@ jobs:
             }
           }
 
-          class SaasDashboard extends StatelessWidget {
+          class SaasDashboard extends StatefulWidget {
             const SaasDashboard({super.key});
+            @override
+            State<SaasDashboard> createState() => _SaasDashboardState();
+          }
+
+          class _SaasDashboardState extends State<SaasDashboard> {
             @override
             Widget build(BuildContext context) {
               return Scaffold(
-                appBar: AppBar(title: const Text('SaaS Control & Partner Admin')),
+                appBar: AppBar(title: const Text('SaaS Control & Partner Admin'), backgroundColor: Colors.indigo.shade50),
                 body: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
                     Row(
                       children: [
-                        _box('Active Outlets', '24', Colors.blue.shade50),
+                        _metricBox('Active Outlets', '24', Colors.blue.shade50),
                         const SizedBox(width: 8),
-                        _box('Live Terminals', '68', Colors.green.shade50),
+                        _metricBox('Live Terminals', '68', Colors.green.shade50),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Card(child: ListTile(leading: const Icon(Icons.key, color: Colors.indigo), title: const Text('Generate License Key'), subtitle: const Text('Hardware-Locked POS Licenses'), trailing: const Icon(Icons.arrow_forward_ios, size: 16))),
-                    Card(child: ListTile(leading: const Icon(Icons.people, color: Colors.teal), title: const Text('Sales & Field Agents'), subtitle: const Text('Onboarding pipeline & targets'), trailing: const Icon(Icons.arrow_forward_ios, size: 16))),
-                    Card(child: ListTile(leading: const Icon(Icons.support_agent, color: Colors.red), title: const Text('Client Support Tickets'), subtitle: const Text('0 Pending issues'), trailing: const Icon(Icons.arrow_forward_ios, size: 16))),
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.vpn_key, color: Colors.indigo),
+                        title: const Text('Generate License Key'),
+                        subtitle: const Text('Hardware-Locked POS Licenses'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LicenseGeneratorScreen())),
+                      ),
+                    ),
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.people, color: Colors.teal),
+                        title: const Text('Sales & Field Agents'),
+                        subtitle: const Text('Onboarding pipeline & staff targets'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SalesAgentsScreen())),
+                      ),
+                    ),
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.support_agent, color: Colors.red),
+                        title: const Text('Client Support Tickets'),
+                        subtitle: const Text('Active issue logs & diagnostics'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportTicketsScreen())),
+                      ),
+                    ),
                   ],
                 ),
               );
             }
-            Widget _box(String l, String v, Color c) => Expanded(child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(12)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(l, style: const TextStyle(fontSize: 12, color: Colors.black54)), const SizedBox(height: 4), Text(v, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))])));
+
+            Widget _metricBox(String label, String value, Color color) {
+              return Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                      const SizedBox(height: 4),
+                      Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          class LicenseGeneratorScreen extends StatefulWidget {
+            const LicenseGeneratorScreen({super.key});
+            @override
+            State<LicenseGeneratorScreen> createState() => _LicenseGeneratorScreenState();
+          }
+
+          class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
+            final _restaurantController = TextEditingController();
+            String _selectedDuration = '1 Year';
+            String _generatedKey = '';
+
+            void _generateKey() {
+              if (_restaurantController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter Restaurant Name')));
+                return;
+              }
+              const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+              final rnd = Random();
+              String part() => String.fromCharCodes(Iterable.generate(4, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+              setState(() {
+                _generatedKey = 'POS-${part()}-${part()}-${part()}';
+              });
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Generate POS License')),
+                body: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(controller: _restaurantController, decoration: const InputDecoration(labelText: 'Restaurant / Outlet Name', border: OutlineInputBorder())),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: _selectedDuration,
+                        decoration: const InputDecoration(border: OutlineInputBorder()),
+                        items: ['1 Month', '3 Months', '6 Months', '1 Year', 'Lifetime'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (val) => setState(() => _selectedDuration = val!),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _generateKey,
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('Generate Hardware-Locked Key'),
+                      ),
+                      if (_generatedKey.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(color: Colors.green.shade50, border: Border.all(color: Colors.green), borderRadius: BorderRadius.circular(8)),
+                          child: Column(
+                            children: [
+                              const Text('Generated License Key:', style: TextStyle(color: Colors.black54)),
+                              const SizedBox(height: 8),
+                              SelectableText(_generatedKey, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+                              const SizedBox(height: 8),
+                              Text('Duration: $_selectedDuration | Status: Ready to Bind Device', style: const TextStyle(fontSize: 12)),
+                            ],
+                          ),
+                        )
+                      ]
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          class SalesAgentsScreen extends StatelessWidget {
+            const SalesAgentsScreen({super.key});
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Sales & Field Agents')),
+                body: ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: const [
+                    Card(
+                      child: ListTile(
+                        leading: CircleAvatar(child: Text('RK')),
+                        title: Text('Rajesh Kumar (Field Agent)'),
+                        subtitle: Text('Onboarded: 12 Outlets | Target: 15'),
+                        trailing: Text('₹24,000 Comm.', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                      ),
+                    ),
+                    Card(
+                      child: ListTile(
+                        leading: CircleAvatar(child: Text('AS')),
+                        title: Text('Amit Sharma (Senior Agent)'),
+                        subtitle: Text('Onboarded: 8 Outlets | Target: 10'),
+                        trailing: Text('₹16,000 Comm.', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+
+          class SupportTicketsScreen extends StatelessWidget {
+            const SupportTicketsScreen({super.key});
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Client Support Tickets')),
+                body: ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: const [
+                    Card(
+                      child: ListTile(
+                        leading: Icon(Icons.check_circle, color: Colors.green),
+                        title: Text('Sharma Bhojnalaya - Printer Setup'),
+                        subtitle: Text('LAN Thermal ESC/POS resolved'),
+                        trailing: Text('Resolved', style: TextStyle(color: Colors.green)),
+                      ),
+                    ),
+                    Card(
+                      child: ListTile(
+                        leading: Icon(Icons.pending, color: Colors.orange),
+                        title: Text('Royal Cafe - Tablet Sync'),
+                        subtitle: Text('Local KDS sync latency issue'),
+                        trailing: Text('In Review', style: TextStyle(color: Colors.orange)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
           }
           EOF
 
-      - name: Set up Java / JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: Build Restaurant POS APK (Outlet App)
+      - name: Build Restaurant POS APK (Unique Package: com.mycompany.restaurantpos)
         run: |
           POS_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "restaurant_pos" | head -n 1 | xargs dirname)
           cd "$POS_DIR"
@@ -258,29 +517,31 @@ jobs:
           with open('pubspec.yaml', 'w') as f:
               f.write(c)
           "
-          flutter create . --platforms=android --org=com.restaurant.pos
+          rm -rf android
+          flutter create . --platforms=android --org=com.mycompany.restaurantpos
           flutter pub get
           flutter build apk --debug --no-tree-shake-icons
           mkdir -p $GITHUB_WORKSPACE/output_pos
           cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_pos/Restaurant-POS-Outlet.apk
 
-      - name: Build SaaS Portal APK (Admin App)
+      - name: Build SaaS Portal APK (Unique Package: com.mycompany.saasportal)
         run: |
           PORTAL_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "saas_portal" | head -n 1 | xargs dirname)
           cd "$PORTAL_DIR"
-          flutter create . --platforms=android --org=com.saas.portal
+          rm -rf android
+          flutter create . --platforms=android --org=com.mycompany.saasportal
           flutter pub get
           flutter build apk --debug --no-tree-shake-icons
           mkdir -p $GITHUB_WORKSPACE/output_portal
           cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_portal/SaaS-Admin-Portal.apk
 
-      - name: Upload Restaurant POS APK (Outlet)
+      - name: Upload Restaurant POS APK (Outlet App)
         uses: actions/upload-artifact@v4
         with:
           name: 1-Restaurant-POS-Outlet-APK
           path: output_pos/Restaurant-POS-Outlet.apk
 
-      - name: Upload SaaS Portal APK (Admin)
+      - name: Upload SaaS Portal APK (Admin App)
         uses: actions/upload-artifact@v4
         with:
           name: 2-SaaS-Admin-Portal-APK
