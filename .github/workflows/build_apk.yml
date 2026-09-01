@@ -21,7 +21,7 @@ jobs:
             unzip -o "$ZIP_FILE"
           fi
 
-      - name: Set up Java / JDK
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
@@ -33,10 +33,21 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Inject Full Interactive UI - Restaurant POS
+      - name: Prepare POS App
         run: |
-          POS_MAIN=$(find . -path "*/restaurant_pos/lib/main.dart" | head -n 1)
-          cat << 'EOF' > "$POS_MAIN"
+          POS_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "restaurant_pos" | head -n 1 | xargs dirname)
+          cd "$POS_DIR"
+          python3 -c "
+          with open('pubspec.yaml', 'r') as f:
+              c = f.read()
+          c = c.replace('^0.3.3+2', '^0.3.3+1')
+          with open('pubspec.yaml', 'w') as f:
+              f.write(c)
+          "
+          rm -rf android
+          flutter create . --platforms=android --org=com.mycompany.restaurantpos
+          
+          cat > lib/main.dart << 'EOF'
           import 'package:flutter/material.dart';
 
           void main() => runApp(const RestaurantPosApp());
@@ -277,11 +288,19 @@ jobs:
             }
           }
           EOF
+          flutter pub get
+          flutter build apk --debug --no-tree-shake-icons
+          mkdir -p $GITHUB_WORKSPACE/output_pos
+          cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_pos/Restaurant-POS-Outlet.apk
 
-      - name: Inject Full Interactive UI - SaaS Portal
+      - name: Prepare SaaS Portal App
         run: |
-          PORTAL_MAIN=$(find . -path "*/saas_portal/lib/main.dart" | head -n 1)
-          cat << 'EOF' > "$PORTAL_MAIN"
+          PORTAL_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "saas_portal" | head -n 1 | xargs dirname)
+          cd "$PORTAL_DIR"
+          rm -rf android
+          flutter create . --platforms=android --org=com.mycompany.saasportal
+          
+          cat > lib/main.dart << 'EOF'
           import 'package:flutter/material.dart';
           import 'dart:math';
 
@@ -505,31 +524,6 @@ jobs:
             }
           }
           EOF
-
-      - name: Build Restaurant POS APK (Unique Package: com.mycompany.restaurantpos)
-        run: |
-          POS_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "restaurant_pos" | head -n 1 | xargs dirname)
-          cd "$POS_DIR"
-          python3 -c "
-          with open('pubspec.yaml', 'r') as f:
-              c = f.read()
-          c = c.replace('^0.3.3+2', '^0.3.3+1')
-          with open('pubspec.yaml', 'w') as f:
-              f.write(c)
-          "
-          rm -rf android
-          flutter create . --platforms=android --org=com.mycompany.restaurantpos
-          flutter pub get
-          flutter build apk --debug --no-tree-shake-icons
-          mkdir -p $GITHUB_WORKSPACE/output_pos
-          cp build/app/outputs/flutter-apk/app-debug.apk $GITHUB_WORKSPACE/output_pos/Restaurant-POS-Outlet.apk
-
-      - name: Build SaaS Portal APK (Unique Package: com.mycompany.saasportal)
-        run: |
-          PORTAL_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "saas_portal" | head -n 1 | xargs dirname)
-          cd "$PORTAL_DIR"
-          rm -rf android
-          flutter create . --platforms=android --org=com.mycompany.saasportal
           flutter pub get
           flutter build apk --debug --no-tree-shake-icons
           mkdir -p $GITHUB_WORKSPACE/output_portal
