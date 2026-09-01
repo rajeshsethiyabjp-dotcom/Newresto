@@ -35,33 +35,32 @@ jobs:
 
       - name: Build Restaurant POS APK
         run: |
-          POS_DIR=$(find . -type f -name "pubspec.yaml" | grep "restaurant_pos" | head -n 1 | xargs dirname)
-          if [ -z "$POS_DIR" ]; then POS_DIR="."; fi
-          echo "Building Restaurant POS in: $POS_DIR"
+          POS_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "restaurant_pos" | head -n 1 | xargs dirname)
+          echo "Building Restaurant POS at: $POS_DIR"
           cd "$POS_DIR"
+          flutter create . --platforms=android --org=com.restaurant.pos
           flutter pub get
           flutter build apk --debug --no-tree-shake-icons
 
       - name: Build SaaS Portal APK
         run: |
-          PORTAL_DIR=$(find . -type f -name "pubspec.yaml" | grep "saas_portal" | head -n 1 | xargs dirname)
-          if [ -n "$PORTAL_DIR" ]; then
-            echo "Building SaaS Portal in: $PORTAL_DIR"
-            cd "$PORTAL_DIR"
-            flutter create . --platforms=android --org=com.saas.portal || true
-            flutter pub get
-            flutter build apk --debug --no-tree-shake-icons
-          fi
+          PORTAL_DIR=$(find . -maxdepth 4 -type f -name "pubspec.yaml" | grep "saas_portal" | head -n 1 | xargs dirname)
+          echo "Building SaaS Portal at: $PORTAL_DIR"
+          cd "$PORTAL_DIR"
+          flutter create . --platforms=android --org=com.saas.portal
+          flutter pub get
+          flutter build apk --debug --no-tree-shake-icons
 
       - name: Upload Restaurant POS APK
         uses: actions/upload-artifact@v4
         with:
           name: Restaurant-POS-App
-          path: "**/restaurant_pos/**/build/app/outputs/flutter-apk/app-debug.apk"
+          path: "**/apps/restaurant_pos/build/app/outputs/flutter-apk/app-debug.apk"
 
       - name: Upload SaaS Portal APK
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: SaaS-Partner-Portal-App
-          path: "**/saas_portal/**/build/app/outputs/flutter-apk/app-debug.apk"
+          path: "**/apps/saas_portal/build/app/outputs/flutter-apk/app-debug.apk"
+          
