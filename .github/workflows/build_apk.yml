@@ -39,6 +39,8 @@ jobs:
           echo "Found POS DIR: $POS_DIR"
           cd "$POS_DIR"
           flutter create . --platforms=android --org=com.restaurant.pos
+          # Fix multicast_dns version mismatch
+          sed -i 's/multicast_dns:.*/multicast_dns: ^0.3.3+1/g' pubspec.yaml
           flutter pub get
           flutter build apk --debug --no-tree-shake-icons
           mkdir -p $GITHUB_WORKSPACE/output_pos
